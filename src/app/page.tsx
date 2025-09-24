@@ -1,23 +1,29 @@
-import { Metadata } from "next";
+import Switch from '@/components/homepage/switch';
+import SwitchTest from '@/components/homepage/switch-test';
+import TypePad from '@/components/homepage/type-pad';
+import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-    title: 'Clack man',
-    description: 'Clack man by Tom Pham',
-    icons: {
-        icon: "/icons/icon.png",
-    },
+	title: 'Clack man',
+	description: 'Clack man by Tom Pham',
+	icons: {
+		icon: '/icons/icon.png',
+	},
 };
 
 export default function Home() {
-    return (
-        <><div>hello world</div>
-            <div className="h-48 bg-red-500 ">hello world</div>
-            <div className="h-48 bg-green-500 ">hello world</div>
-            <div className="h-48 bg-blue-500 ">hello world</div>
-            <div className="h-48 bg-orange-500 ">hello world</div>
-            <div className="h-48 bg-cyan-500 ">hello world</div>
-            <div className="h-48 bg-purple-500 ">hello world</div>
-        </>
-
-    );
+	return (
+		<>
+			<div className='w-full flex items-center justify-between p-3'>
+				<Switch />
+				<p className='w-full text-center'>placeholder</p>
+			</div>
+			<div className='w-full p-3'>
+				<SwitchTest />
+			</div>
+			<div className='w-full max-w-4xl mx-auto'>
+				<TypePad />
+			</div>
+		</>
+	);
 }
