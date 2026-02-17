@@ -11,9 +11,21 @@ export default function TypePad() {
     const [modColor, setModColor] = useState('#141414ff');
     const [accentColor, setAccentColor] = useState('#5e26a7ff');
     const [enableAccent, setEnableAccent] = useState(false);
+    const [sfxFiles, setSfxFiles] = useState<string[]>([]);
+    const [selectedSfx, setSelectedSfx] = useState<string>('');
 
-    // store all key refs here, not per-row
     const keyRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        fetch('/api/sfx')
+            .then((res) => res.json())
+            .then((data: { files: string[] }) => {
+                setSfxFiles(data.files ?? []);
+                if (data.files?.length && !selectedSfx) setSelectedSfx(data.files[0]);
+            })
+            .catch(() => setSfxFiles([]));
+    }, []);
 
     useEffect(() => {
         function handleDown(e: KeyboardEvent) {
@@ -21,6 +33,12 @@ export default function TypePad() {
             e.stopPropagation();
             const ref = keyRefs.current[e.key];
             if (ref) ref.classList.add('pressed');
+            if (selectedSfx) {
+                const audio = new Audio(`/sfx/${selectedSfx}`);
+                audio.playbackRate = 1.4;
+                audioRef.current = audio;
+                audio.play().catch(() => {});
+            }
         }
         function handleUp(e: KeyboardEvent) {
             e.preventDefault();
@@ -34,10 +52,30 @@ export default function TypePad() {
             window.removeEventListener('keydown', handleDown);
             window.removeEventListener('keyup', handleUp);
         };
-    }, []);
+    }, [selectedSfx]);
 
     return (
         <div className='flex flex-col gap-2 w-full rounded-lg shadow-lg drop-shadow-lg p-5'>
+            {sfxFiles.length > 0 && (
+                <div className='flex items-center gap-2 mb-1'>
+                    <label htmlFor='sfx-select' className='text-sm font-medium text-neutral-600'>
+                        Typing sound
+                    </label>
+                    <select
+                        id='sfx-select'
+                        value={selectedSfx}
+                        onChange={(e) => setSelectedSfx(e.target.value)}
+                        className='rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500'
+                    >
+                        <option value=''>None</option>
+                        {sfxFiles.map((file) => (
+                            <option key={file} value={file}>
+                                {file.replace(/\.[^.]+$/, '')}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
             {layout.map((r, i) => (
                 <Keyrow
                     key={i}
