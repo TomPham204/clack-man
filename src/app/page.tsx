@@ -16,12 +16,11 @@ export default function Home() {
 		<>
 			<div className='w-full flex items-center justify-between p-3'>
 				<Switch />
-				<p className='w-full text-center'>placeholder</p>
 			</div>
 			<div className='w-full p-3'>
 				<SwitchTest />
 			</div>
-			<div className='w-full max-w-4xl mx-auto'>
+			<div className='w-full max-w-6xl mx-auto'>
 				<TypePad />
 			</div>
 		</>

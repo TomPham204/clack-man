@@ -1,6 +1,12 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tsanganLayout } from './keyboard-layouts/tsangan';
+import { buildKeyPlaybackCache, type SamplePointRole } from './sfx-9point';
+import { analyzeAudioBuffer } from './audio-analysis';
+
+type SfxPack = { id: string; name: string; samples: Record<string, string> };
+
+const GRID_ROLES_PLUS_SPACE: (SamplePointRole | 'space')[] = ['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se', 'space'];
 
 export default function TypePad() {
     const layouts = {
@@ -12,30 +18,117 @@ export default function TypePad() {
     const [accentColor, setAccentColor] = useState('#5e26a7ff');
     const [enableAccent, setEnableAccent] = useState(false);
     const [sfxFiles, setSfxFiles] = useState<string[]>([]);
+    const [sfxPacks, setSfxPacks] = useState<SfxPack[]>([]);
     const [selectedSfx, setSelectedSfx] = useState<string>('');
+    const [packAnalyzedProps, setPackAnalyzedProps] = useState<Record<SamplePointRole, { pitchHz: number; spectralCentroid: number; rms: number; fadeOutRate: number }> | null>(null);
+    const [packAnalysisLoading, setPackAnalysisLoading] = useState(false);
 
     const keyRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetch('/api/sfx')
             .then((res) => res.json())
-            .then((data: { files: string[] }) => {
+            .then((data: { files?: string[]; packs?: SfxPack[] }) => {
                 setSfxFiles(data.files ?? []);
-                if (data.files?.length && !selectedSfx) setSelectedSfx(data.files[0]);
+                setSfxPacks(data.packs ?? []);
+                if (!selectedSfx) {
+                    if ((data.packs?.length ?? 0) > 0) setSelectedSfx(`pack:${data.packs![0].id}`);
+                    else if ((data.files?.length ?? 0) > 0) setSelectedSfx(`file:${data.files![0]}`);
+                }
             })
-            .catch(() => setSfxFiles([]));
+            .catch(() => {
+                setSfxFiles([]);
+                setSfxPacks([]);
+            });
     }, []);
 
+    const isPack = selectedSfx.startsWith('pack:');
+    const packId = isPack ? selectedSfx.slice(5) : '';
+    const pack = useMemo(() => sfxPacks.find((p) => p.id === packId) ?? null, [sfxPacks, packId]);
+
     useEffect(() => {
+        if (!pack?.samples) {
+            setPackAnalyzedProps(null);
+            return;
+        }
+        let cancelled = false;
+        setPackAnalysisLoading(true);
+        if (typeof window === 'undefined') {
+            setPackAnalysisLoading(false);
+            return () => {};
+        }
+        const ctx = new AudioContext();
+        const packPath = `sfx/${encodeURIComponent(pack.id)}`;
+        const roles = GRID_ROLES_PLUS_SPACE;
+        Promise.all(
+            roles.map(async (role) => {
+                const file = pack.samples[role];
+                if (!file) return { role, props: null };
+                const url = `/${packPath}/${encodeURIComponent(file)}`;
+                const res = await fetch(url);
+                if (!res.ok) return { role, props: null };
+                const arrayBuffer = await res.arrayBuffer();
+                const buffer = await ctx.decodeAudioData(arrayBuffer);
+                const props = analyzeAudioBuffer(buffer);
+                return { role, props };
+            })
+        )
+            .then((results) => {
+                if (cancelled) return;
+                const byRole = {} as Record<SamplePointRole, { pitchHz: number; spectralCentroid: number; rms: number; fadeOutRate: number }>;
+                let ok = true;
+                for (const { role, props } of results) {
+                    if (role === 'space' || !props) continue;
+                    if (!props) ok = false;
+                    else byRole[role as SamplePointRole] = props;
+                }
+                if (ok && Object.keys(byRole).length >= 9) setPackAnalyzedProps(byRole);
+                else setPackAnalyzedProps(null);
+            })
+            .catch(() => {
+                if (!cancelled) setPackAnalyzedProps(null);
+            })
+            .finally(() => {
+                if (!cancelled) setPackAnalysisLoading(false);
+                ctx.close();
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [pack?.id, pack?.samples]);
+
+    const keyPlaybackCache = useMemo(() => {
+        if (!pack?.samples || !packAnalyzedProps) return null;
+        return buildKeyPlaybackCache(layout, pack.samples, `sfx/${pack.id}`, packAnalyzedProps);
+    }, [layout, pack, packAnalyzedProps]);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const cache = keyPlaybackCache;
+        const usePack = isPack && cache;
+        const singleFile = !isPack && selectedSfx.startsWith('file:') ? selectedSfx.slice(5) : '';
+
         function handleDown(e: KeyboardEvent) {
             e.preventDefault();
             e.stopPropagation();
             const ref = keyRefs.current[e.key];
             if (ref) ref.classList.add('pressed');
-            if (selectedSfx) {
-                const audio = new Audio(`/sfx/${selectedSfx}`);
-                audio.playbackRate = 1.4;
+            if (!selectedSfx) return;
+            if (usePack && cache) {
+                const playback = cache.get(e.key);
+                if (playback) {
+                    const audio = new Audio(`/${playback.sampleFile}`);
+                    audio.playbackRate = playback.playbackRate;
+                    audio.volume = playback.volume;
+                    audioRef.current = audio;
+                    audio.play().catch(() => {});
+                }
+            } else if (singleFile) {
+                const audio = new Audio(`/sfx/${singleFile}`);
+                audio.playbackRate = 1.25;
                 audioRef.current = audio;
                 audio.play().catch(() => {});
             }
@@ -46,18 +139,29 @@ export default function TypePad() {
             const ref = keyRefs.current[e.key];
             if (ref) ref.classList.remove('pressed');
         }
-        window.addEventListener('keydown', handleDown);
-        window.addEventListener('keyup', handleUp);
+        el.addEventListener('keydown', handleDown);
+        el.addEventListener('keyup', handleUp);
         return () => {
-            window.removeEventListener('keydown', handleDown);
-            window.removeEventListener('keyup', handleUp);
+            el.removeEventListener('keydown', handleDown);
+            el.removeEventListener('keyup', handleUp);
         };
-    }, [selectedSfx]);
+    }, [selectedSfx, isPack, keyPlaybackCache]);
 
     return (
-        <div className='flex flex-col gap-2 w-full rounded-lg shadow-lg drop-shadow-lg p-5'>
-            {sfxFiles.length > 0 && (
-                <div className='flex items-center gap-2 mb-1'>
+        <div
+            ref={containerRef}
+            tabIndex={0}
+            role="application"
+            aria-label="Typepad keyboard"
+            onClick={(e) => {
+                if (!(e.target as HTMLElement).closest('[data-sfx-controls]')) {
+                    containerRef.current?.focus();
+                }
+            }}
+            className='flex flex-col gap-2 w-full rounded-lg shadow-lg drop-shadow-lg p-5 outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-inset'
+        >
+            {(sfxFiles.length > 0 || sfxPacks.length > 0) && (
+                <div data-sfx-controls className='flex items-center gap-2 mb-1'>
                     <label htmlFor='sfx-select' className='text-sm font-medium text-neutral-600'>
                         Typing sound
                     </label>
@@ -69,11 +173,20 @@ export default function TypePad() {
                     >
                         <option value=''>None</option>
                         {sfxFiles.map((file) => (
-                            <option key={file} value={file}>
-                                {file.replace(/\.[^.]+$/, '')}
+                            <option key={`file:${file}`} value={`file:${file}`}>
+                                {file.includes('/') ? file.split('/')[0] : file.replace(/\.[^.]+$/, '')}
+                            </option>
+                        ))}
+                        {sfxPacks.length > 0 && sfxFiles.length > 0 && <option disabled>──</option>}
+                        {sfxPacks.map((p) => (
+                            <option key={`pack:${p.id}`} value={`pack:${p.id}`}>
+                                {p.name} (9-point)
                             </option>
                         ))}
                     </select>
+                    {packAnalysisLoading && (
+                        <span className='text-xs text-neutral-500'>Analyzing samples…</span>
+                    )}
                 </div>
             )}
             {layout.map((r, i) => (
