@@ -204,7 +204,7 @@ export default function TypePad() {
 
 type KeyrowProps = {
     rowData: {
-        keyLabel: string;
+        keyLabel: string[];
         keyValue: string;
         keyLength: number;
         keyType: string;
@@ -232,16 +232,18 @@ function Keyrow({ rowData, colors, enableAccent = false, keyRefs }: KeyrowProps)
                             keyRefs.current[k.keyValue] = el;
                         }}
                         style={{
-                            width: `${60 * k.keyLength}px`,
-                            height: '60px',
+                            width: `${80 * k.keyLength}px`,
+                            height: '80px',
                             backgroundColor: bg,
                             color: legend,
                             alignItems: k.keyType == 'alpha' ? 'flex-start' : 'center',
                         }}
-                        className='capitalize text-md rounded-md shadow-sm drop-shadow-sm flex items-center justify-center cursor-pointer brightness-100 hover:opacity-[0.9] active:opacity-[0.8] active:translate-y-[2px] active:scale-[0.98] transition-all ease-in-out duration-150 flex justify-start p-2'
+                        className={'capitalize text-md rounded-md shadow-sm drop-shadow-sm flex flex-col cursor-pointer brightness-100 hover:opacity-[0.9] active:opacity-[0.8] active:translate-y-[2px] active:scale-[0.98] transition-all ease-in-out duration-150 p-2.5 gap-0.5' + (k.keyType == 'alpha' ? ' justify-start items-start' : ' justify-center !items-start')}
                         onClick={(e) => e.preventDefault()}
                     >
-                        {k.keyLabel}
+                        {k.keyLabel.map((label, j) => (
+                            <span key={j} className='text-lg font-medium'>{label}</span>
+                        ))}
                     </div>
                 );
             })}
