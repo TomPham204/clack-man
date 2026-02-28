@@ -307,6 +307,7 @@ export const tsanganLayout = [
 		{
 			keyLabel: ['Shift'],
 			keyValue: 'Shift',
+			keyCode: 'ShiftLeft',
 			keyLength: 2.25,
 			keyType: 'mod',
 			keyAccentAvailable: false,
@@ -384,6 +385,7 @@ export const tsanganLayout = [
 		{
 			keyLabel: ['Shift'],
 			keyValue: 'Shift',
+			keyCode: 'ShiftRight',
 			keyLength: 1.75,
 			keyType: 'mod',
 			keyAccentAvailable: false,

@@ -115,7 +115,8 @@ export default function TypePad() {
         function handleDown(e: KeyboardEvent) {
             e.preventDefault();
             e.stopPropagation();
-            const ref = keyRefs.current[e.key];
+            const refKey = e.code === 'ShiftLeft' ? 'ShiftLeft' : e.code === 'ShiftRight' ? 'ShiftRight' : e.key;
+            const ref = keyRefs.current[refKey];
             if (ref) ref.classList.add('pressed');
             if (!selectedSfx) return;
             if (usePack && cache) {
@@ -138,7 +139,8 @@ export default function TypePad() {
         function handleUp(e: KeyboardEvent) {
             e.preventDefault();
             e.stopPropagation();
-            const ref = keyRefs.current[e.key];
+            const refKey = e.code === 'ShiftLeft' ? 'ShiftLeft' : e.code === 'ShiftRight' ? 'ShiftRight' : e.key;
+            const ref = keyRefs.current[refKey];
             if (ref) ref.classList.remove('pressed');
         }
         el.addEventListener('keydown', handleDown);
@@ -208,6 +210,7 @@ type KeyrowProps = {
     rowData: {
         keyLabel: string[];
         keyValue: string;
+        keyCode?: string;
         keyLength: number;
         keyType: string;
         keyAccentAvailable: boolean;
@@ -231,7 +234,7 @@ function Keyrow({ rowData, colors, enableAccent = false, keyRefs }: KeyrowProps)
                     <div
                         key={i}
                         ref={(el) => {
-                            keyRefs.current[k.keyValue] = el;
+                            keyRefs.current[k.keyCode ?? k.keyValue] = el;
                         }}
                         style={{
                             width: `${80 * k.keyLength}px`,
