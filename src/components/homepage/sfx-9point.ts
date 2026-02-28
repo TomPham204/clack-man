@@ -13,7 +13,7 @@ export type LayoutKey = {
 
 export type KeyPosition = { keyValue: string; x: number; y: number };
 
-export type SamplePointRole = 'nw' | 'n' | 'ne' | 'w' | 'c' | 'e' | 'sw' | 's' | 'se' | 'space';
+export type SamplePointRole = 'nw' | 'nc' | 'ne' | 'w' | 'c' | 'e' | 'sw' | 'sc' | 'se' | 'space' | 'lshift' | 'rshift' | 'enter';
 
 export type AnalyzedProps = {
     pitchHz: number;
@@ -28,20 +28,20 @@ export type KeyPlayback = {
     volume: number;
 };
 
-/** 9 sample point keys: ~ (`), 7, + (=), a, h, ' (quote), z, b, ? (/). Maps keyValue -> role. */
+/** 9 sample point keys: ~ (`), 7, + (=), a, h, ' (quote), z, b, ? (/). Maps keyValue -> role. n=nc, s=sc. */
 export const SAMPLE_KEY_TO_ROLE: Record<string, SamplePointRole> = {
     '`': 'nw',
-    '7': 'n',
+    '7': 'nc',
     '=': 'ne',
     a: 'w',
     h: 'c',
     "'": 'e',
     z: 'sw',
-    b: 's',
+    b: 'sc',
     '/': 'se',
 };
 
-const GRID_ROLES: SamplePointRole[] = ['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se'];
+export const GRID_ROLES: SamplePointRole[] = ['nw', 'nc', 'ne', 'w', 'c', 'e', 'sw', 'sc', 'se'];
 
 /**
  * Build key positions (center x, y in key units) from layout.
@@ -147,16 +147,25 @@ export function buildKeyPlaybackCache(
 
     const basePlaybackRate = 1.25;
 
+    const longModRoles: { cacheKey: string; role: 'space' | 'lshift' | 'rshift' | 'enter' }[] = [
+        { cacheKey: ' ', role: 'space' },
+        { cacheKey: 'ShiftLeft', role: 'lshift' },
+        { cacheKey: 'ShiftRight', role: 'rshift' },
+        { cacheKey: 'Enter', role: 'enter' },
+    ];
+    for (const { cacheKey, role } of longModRoles) {
+        const sampleFile = packSamples[role];
+        if (sampleFile) {
+            cache.set(cacheKey, {
+                sampleFile: `${packPath}/${sampleFile}`,
+                playbackRate: basePlaybackRate,
+                volume: 1,
+            });
+        }
+    }
+
     for (const kp of keyPositions) {
-        if (kp.keyValue === ' ') {
-            const spaceFile = packSamples['space'];
-            if (spaceFile) {
-                cache.set(' ', {
-                    sampleFile: `${packPath}/${spaceFile}`,
-                    playbackRate: basePlaybackRate,
-                    volume: 1,
-                });
-            }
+        if (kp.keyValue === ' ' || kp.keyValue === 'Shift' || kp.keyValue === 'Enter') {
             continue;
         }
 

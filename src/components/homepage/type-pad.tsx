@@ -1,12 +1,11 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tsanganLayout } from './keyboard-layouts/tsangan';
-import { buildKeyPlaybackCache, type SamplePointRole } from './sfx-9point';
+import { buildKeyPlaybackCache, GRID_ROLES, type SamplePointRole } from './sfx-9point';
 import { analyzeAudioBuffer } from './audio-analysis';
 
 type SfxPack = { id: string; name: string; samples: Record<string, string> };
 
-const GRID_ROLES_PLUS_SPACE: (SamplePointRole | 'space')[] = ['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se', 'space'];
 
 export default function TypePad() {
     const layouts = {
@@ -61,7 +60,7 @@ export default function TypePad() {
         }
         const ctx = new AudioContext();
         const packPath = `sfx/${encodeURIComponent(pack.id)}`;
-        const roles = GRID_ROLES_PLUS_SPACE;
+        const roles = GRID_ROLES;
         Promise.all(
             roles.map(async (role) => {
                 const file = pack.samples[role];
@@ -80,9 +79,11 @@ export default function TypePad() {
                 const byRole = {} as Record<SamplePointRole, { pitchHz: number; spectralCentroid: number; rms: number; fadeOutRate: number }>;
                 let ok = true;
                 for (const { role, props } of results) {
-                    if (role === 'space' || !props) continue;
-                    if (!props) ok = false;
-                    else byRole[role as SamplePointRole] = props;
+                    if (!props) {
+                        ok = false;
+                        continue;
+                    }
+                    byRole[role as SamplePointRole] = props;
                 }
                 if (ok && Object.keys(byRole).length >= 9) setPackAnalyzedProps(byRole);
                 else setPackAnalyzedProps(null);
@@ -118,7 +119,8 @@ export default function TypePad() {
             if (ref) ref.classList.add('pressed');
             if (!selectedSfx) return;
             if (usePack && cache) {
-                const playback = cache.get(e.key);
+                    const cacheKey = e.code === 'ShiftLeft' ? 'ShiftLeft' : e.code === 'ShiftRight' ? 'ShiftRight' : e.key;
+                    const playback = cache.get(cacheKey);
                 if (playback) {
                     const audio = new Audio(`/${playback.sampleFile}`);
                     audio.playbackRate = playback.playbackRate;
