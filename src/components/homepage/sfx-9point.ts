@@ -18,14 +18,20 @@ export type SamplePointRole = 'nw' | 'nc' | 'ne' | 'w' | 'c' | 'e' | 'sw' | 'sc'
 export type AnalyzedProps = {
     pitchHz: number;
     spectralCentroid: number;
+    spectralRolloff: number;
     rms: number;
     fadeOutRate: number;
 };
 
-export type KeyPlayback = {
+export type KeyPlaybackLayer = {
     sampleFile: string;
     playbackRate: number;
     volume: number;
+    gain: number;
+};
+
+export type KeyPlayback = {
+    layers: KeyPlaybackLayer[];
 };
 
 /** 9 sample point keys: ~ (`), 7, + (=), a, h, ' (quote), z, b, ? (/). Maps keyValue -> role. n=nc, s=sc. */
@@ -116,6 +122,7 @@ function weightedAverageProps(
 ): AnalyzedProps {
     let pitchHz = 0;
     let spectralCentroid = 0;
+    let spectralRolloff = 0;
     let rms = 0;
     let fadeOutRate = 0;
     for (const role of GRID_ROLES) {
@@ -124,11 +131,18 @@ function weightedAverageProps(
         if (!p || w <= 0) continue;
         pitchHz += w * p.pitchHz;
         spectralCentroid += w * p.spectralCentroid;
+        spectralRolloff += w * p.spectralRolloff;
         rms += w * p.rms;
         fadeOutRate += w * p.fadeOutRate;
     }
-    return { pitchHz, spectralCentroid, rms, fadeOutRate };
+    return { pitchHz, spectralCentroid, spectralRolloff, rms, fadeOutRate };
 }
+
+/** Number of nearest samples to blend for synthesized keys (2–3 sounds more like an average). */
+const BLEND_TOP_N = 3;
+
+/** Minimum weight to include a sample in the blend. */
+const BLEND_MIN_WEIGHT = 0.05;
 
 /**
  * Precompute per-key playback from analyzed sample properties.
@@ -157,9 +171,14 @@ export function buildKeyPlaybackCache(
         const sampleFile = packSamples[role];
         if (sampleFile) {
             cache.set(cacheKey, {
-                sampleFile: `${packPath}/${sampleFile}`,
-                playbackRate: basePlaybackRate,
-                volume: 1,
+                layers: [
+                    {
+                        sampleFile: `${packPath}/${sampleFile}`,
+                        playbackRate: basePlaybackRate,
+                        volume: 1,
+                        gain: 1,
+                    },
+                ],
             });
         }
     }
@@ -174,9 +193,14 @@ export function buildKeyPlaybackCache(
             const sampleFile = packSamples[role];
             if (sampleFile) {
                 cache.set(kp.keyValue, {
-                    sampleFile: `${packPath}/${sampleFile}`,
-                    playbackRate: basePlaybackRate,
-                    volume: 1,
+                    layers: [
+                        {
+                            sampleFile: `${packPath}/${sampleFile}`,
+                            playbackRate: basePlaybackRate,
+                            volume: 1,
+                            gain: 1,
+                        },
+                    ],
                 });
             }
             continue;
@@ -186,32 +210,55 @@ export function buildKeyPlaybackCache(
         if (!weights) continue;
 
         const target = weightedAverageProps(weights, analyzedByRole);
-        let bestRole: SamplePointRole = 'c';
-        let bestW = 0;
+
+        // Timbre-aware weight: boost samples whose spectral centroid and fade are closer to target.
+        const blendScores: { role: SamplePointRole; score: number }[] = [];
         for (const r of GRID_ROLES) {
-            if (weights[r] > bestW) {
-                bestW = weights[r];
-                bestRole = r;
-            }
+            const posW = weights[r];
+            if (posW < BLEND_MIN_WEIGHT) continue;
+            const p = analyzedByRole[r];
+            if (!p || !packSamples[r]) continue;
+            const centroidNorm = 1 / (1 + Math.abs(target.spectralCentroid - p.spectralCentroid) / 2000);
+            const rolloffNorm = 1 / (1 + Math.abs(target.spectralRolloff - p.spectralRolloff) / 3000);
+            const fadeNorm = 1 / (1 + Math.abs(target.fadeOutRate - p.fadeOutRate));
+            const timbreW = (centroidNorm + rolloffNorm + fadeNorm) / 3;
+            blendScores.push({ role: r, score: posW * (0.7 + 0.3 * timbreW) });
         }
-        if (bestW <= 0) continue;
+        blendScores.sort((a, b) => b.score - a.score);
+        const top = blendScores.slice(0, BLEND_TOP_N);
+        const scoreSum = top.reduce((s, t) => s + t.score, 0);
+        if (scoreSum <= 0) continue;
 
-        const base = analyzedByRole[bestRole];
-        if (!base) continue;
+        const layers: KeyPlaybackLayer[] = [];
+        let weightedPitch = 0;
+        let weightedRms = 0;
+        for (const { role: r, score } of top) {
+            const gain = score / scoreSum;
+            const base = analyzedByRole[r];
+            const sampleFile = packSamples[r];
+            if (!base || !sampleFile) continue;
+            weightedPitch += gain * base.pitchHz;
+            weightedRms += gain * base.rms;
+            layers.push({
+                sampleFile: `${packPath}/${sampleFile}`,
+                playbackRate: basePlaybackRate,
+                volume: 1,
+                gain,
+            });
+        }
+        if (layers.length === 0) continue;
 
-        const sampleFile = packSamples[bestRole];
-        if (!sampleFile) continue;
-
-        const pitchRatio = target.pitchHz / base.pitchHz;
+        const pitchRatio = target.pitchHz / weightedPitch;
         const playbackRate = basePlaybackRate * Math.max(0.5, Math.min(1.5, pitchRatio));
-        const rmsRatio = target.rms / base.rms;
-        const volume = Math.max(0.5, Math.min(1, rmsRatio));
+        const rmsRatio = target.rms / weightedRms;
+        const volume = Math.max(0.5, Math.min(1.2, rmsRatio));
 
-        cache.set(kp.keyValue, {
-            sampleFile: `${packPath}/${sampleFile}`,
-            playbackRate,
-            volume,
-        });
+        for (const layer of layers) {
+            layer.playbackRate = playbackRate;
+            layer.volume = volume;
+        }
+
+        cache.set(kp.keyValue, { layers });
     }
     return cache;
 }

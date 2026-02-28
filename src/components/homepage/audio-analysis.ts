@@ -11,6 +11,7 @@ const MEYDA_BUFFER_SIZE = 2048;
 export type AnalyzedProps = {
     pitchHz: number;
     spectralCentroid: number;
+    spectralRolloff: number;
     rms: number;
     fadeOutRate: number;
 };
@@ -63,21 +64,27 @@ export function analyzeAudioBuffer(buffer: AudioBuffer): AnalyzedProps {
     meydaSignal.set(channel.subarray(0, copyLen));
     Meyda.bufferSize = MEYDA_BUFFER_SIZE;
     Meyda.sampleRate = sampleRate;
-    const features = Meyda.extract(['rms', 'spectralCentroid'], meydaSignal) as {
+    const features = Meyda.extract(['rms', 'spectralCentroid', 'spectralRolloff'], meydaSignal) as {
         rms?: number;
         spectralCentroid?: number;
+        spectralRolloff?: number;
     } | null;
     const rmsVal = features?.rms ?? rms(channel, 0, length);
     const spectralCentroid =
         typeof features?.spectralCentroid === 'number' && Number.isFinite(features.spectralCentroid)
             ? features.spectralCentroid
             : 1000;
+    const spectralRolloff =
+        typeof features?.spectralRolloff === 'number' && Number.isFinite(features.spectralRolloff)
+            ? features.spectralRolloff
+            : 4000;
 
     const fade = fadeOutRate(channel);
 
     return {
         pitchHz: clampedPitch,
         spectralCentroid: Math.max(100, Math.min(10000, spectralCentroid)),
+        spectralRolloff: Math.max(200, Math.min(15000, spectralRolloff)),
         rms: Math.max(1e-6, rmsVal),
         fadeOutRate: fade,
     };

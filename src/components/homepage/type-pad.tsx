@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tsanganLayout } from './keyboard-layouts/tsangan';
-import { buildKeyPlaybackCache, GRID_ROLES, type SamplePointRole } from './sfx-9point';
+import { buildKeyPlaybackCache, GRID_ROLES, type AnalyzedProps, type SamplePointRole } from './sfx-9point';
 import { analyzeAudioBuffer } from './audio-analysis';
 
 type SfxPack = { id: string; name: string; samples: Record<string, string> };
@@ -19,7 +19,7 @@ export default function TypePad() {
     const [sfxFiles, setSfxFiles] = useState<string[]>([]);
     const [sfxPacks, setSfxPacks] = useState<SfxPack[]>([]);
     const [selectedSfx, setSelectedSfx] = useState<string>('');
-    const [packAnalyzedProps, setPackAnalyzedProps] = useState<Record<SamplePointRole, { pitchHz: number; spectralCentroid: number; rms: number; fadeOutRate: number }> | null>(null);
+    const [packAnalyzedProps, setPackAnalyzedProps] = useState<Record<SamplePointRole, AnalyzedProps> | null>(null);
     const [packAnalysisLoading, setPackAnalysisLoading] = useState(false);
 
     const keyRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -76,7 +76,7 @@ export default function TypePad() {
         )
             .then((results) => {
                 if (cancelled) return;
-                const byRole = {} as Record<SamplePointRole, { pitchHz: number; spectralCentroid: number; rms: number; fadeOutRate: number }>;
+                const byRole = {} as Record<SamplePointRole, AnalyzedProps>;
                 let ok = true;
                 for (const { role, props } of results) {
                     if (!props) {
@@ -122,12 +122,16 @@ export default function TypePad() {
             if (usePack && cache) {
                     const cacheKey = e.code === 'ShiftLeft' ? 'ShiftLeft' : e.code === 'ShiftRight' ? 'ShiftRight' : e.key;
                     const playback = cache.get(cacheKey);
-                if (playback) {
-                    const audio = new Audio(`/${playback.sampleFile}`);
-                    audio.playbackRate = playback.playbackRate;
-                    audio.volume = playback.volume;
-                    audioRef.current = audio;
-                    audio.play().catch(() => {});
+                if (playback?.layers?.length) {
+                    const playing: HTMLAudioElement[] = [];
+                    for (const layer of playback.layers) {
+                        const audio = new Audio(`/${layer.sampleFile}`);
+                        audio.playbackRate = layer.playbackRate;
+                        audio.volume = layer.volume * layer.gain;
+                        playing.push(audio);
+                        audio.play().catch(() => {});
+                    }
+                    audioRef.current = playing[0] ?? null;
                 }
             } else if (singleFile) {
                 const audio = new Audio(`/sfx/${singleFile}`);
